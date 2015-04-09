@@ -19,9 +19,7 @@ extern "C" {
         int dimension;
     } gauss_jordan;
 
-    void init(int augmented_n, float** augmented_m, int groupDistribution);
-    int is_my_column(int col_idx, int my_rank);
-    int process_of_column(int col_idx);
+    float** init(int augmented_n, float** augmented_m, int groupDistribution);
     
 
 #ifdef	__cplusplus

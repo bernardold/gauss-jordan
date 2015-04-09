@@ -7,6 +7,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <mpi.h>
+#include <unistd.h>
 
 #include "gauss-jordan.h"
 
@@ -46,7 +48,11 @@ int main(int argc, char** argv) {
     
     init(augmented_n, augmented_m, groupsDistribution);
     
-
+    int my_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+    printf("Proc(%d) finished\n", my_rank);
+    MPI_Barrier(MPI_COMM_WORLD);
+//    sleep(5);
     return (EXIT_SUCCESS);
 }
 
