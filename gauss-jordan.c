@@ -107,6 +107,10 @@ void destroy(column_t** my_cols_ptr, int my_rank) {
     printf("Process[%d] destroyed its data\n", my_rank);
 }
 
+void gj_kgi_main_loop(column_t* my_cols, int my_rank) {
+    
+}
+
 /**
  * Checks if the column given belongs to the MPI process passed
  * @param col_idx The column idx
