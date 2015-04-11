@@ -12,14 +12,15 @@
 extern "C" {
 #endif
 
-    typedef struct Column_Type {
+    struct Column_Type {
         float* data;
         int idx;
-    } column;
+    };
+    typedef struct Column_Type* column_t;
     
-    column* create_column(int idx, float* data);
-    void delete_column(column** col_ptr);
-    void print_column(column* column);
+    column_t create_column(int idx, float* data);
+    void delete_column(column_t col_ptr);
+    void print_column(column_t column);
 
 
 #ifdef	__cplusplus

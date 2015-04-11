@@ -10,11 +10,11 @@ extern gauss_jordan gj;
  * Creates a Column datatype (allocates the memory
  * needed and returns a pointer to it)
  * @param idx The index of the column in the original matrix
- * @param data The coeffiecients of the column
+ * @param data The coefficients of the column
  * @return A pointer to the allocated Column datatype
  */
-column* create_column(int idx, float* data) {
-    column* col = malloc(sizeof(column));
+column_t create_column(int idx, float* data) {
+    column_t col = malloc(sizeof(struct Column_Type));
     col->idx = idx;
     col->data = malloc(gj.dimension * sizeof(float));
     memcpy(col->data, data, gj.dimension * sizeof(float));
@@ -24,13 +24,12 @@ column* create_column(int idx, float* data) {
 /**
  * Deletes the space allocated for the column and nullifies the
  * pointer to it
- * @param col_ptr The adress of the pointer to the column datatype
+ * @param col_ptr The address of the pointer to the column datatype
  */
-void delete_column(column** col_ptr) {
-    (*col_ptr)->idx = -1;
-    free((*col_ptr)->data);
-    (*col_ptr)->data = NULL;
-    *col_ptr = NULL;
+void delete_column(column_t col_ptr) {
+    (col_ptr)->idx = -1;
+    free((col_ptr)->data);
+    (col_ptr)->data = NULL;
 }
 
 /**
@@ -38,11 +37,16 @@ void delete_column(column** col_ptr) {
  * Gauss Jordan struct)
  * @param column A pointer to the column to be printed
  */
-void print_column(column* column) {
-    printf("Column[%d]: ", column->idx);
-    int i;
-    for (i = 0; i < gj.dimension; i++) {
-        printf("%f | ", column->data[i]);
+void print_column(column_t column) {
+    if (column->data != NULL) {
+        printf("Column[%d]: ", column->idx);
+        int i;
+        for (i = 0; i < gj.dimension; i++) {
+            printf("%f | ", column->data[i]);
+        }
+        printf("\n");
     }
-    printf("\n");
+    else {
+        printf("Column isn't instantiated\n");
+    }
 }

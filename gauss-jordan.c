@@ -21,7 +21,7 @@ int process_of_column(int col_idx);
  * @param groupDistribution
  * @return The array of columns of each process
  */
-column** init(int augmented_n, float** augmented_m, int groupDistribution) {
+column_t* init(int augmented_n, float** augmented_m, int groupDistribution) {
     gj.dimension = augmented_n - 1;
     gj.groupDistribution = groupDistribution;
     // Init MPI
@@ -32,7 +32,7 @@ column** init(int augmented_n, float** augmented_m, int groupDistribution) {
 
     int my_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
-    column** my_cols;
+    column_t* my_cols;
     // Master populates an all-columns array
     // then sends the appropriate columns to their "owners"
     // Others, receive their columns and add them to their column array
@@ -50,7 +50,7 @@ column** init(int augmented_n, float** augmented_m, int groupDistribution) {
         
         // Send to others and populate yours
         // (master handles the b-vector as well)
-        my_cols = malloc((gj.groupNumber + 1) * sizeof(column*));
+        my_cols = malloc((gj.groupNumber + 1) * sizeof(column_t));
         MPI_Request* requests = 
             malloc(gj.groupNumber * (gj.proc_num - 1) * sizeof(MPI_Request));
         int my_cols_idx = 0, requests_idx = 0;
@@ -61,7 +61,7 @@ column** init(int augmented_n, float** augmented_m, int groupDistribution) {
                     MPI_COMM_WORLD, &(requests[requests_idx++]));
             }
             else 
-                my_cols[my_cols_idx] = create_column(j, columns[j]);
+                my_cols[my_cols_idx++] = create_column(j, columns[j]);
         }
         // Add b-vector
         my_cols[my_cols_idx] = create_column(j, columns[gj.dimension]);
@@ -73,19 +73,19 @@ column** init(int augmented_n, float** augmented_m, int groupDistribution) {
     }
     else {
         // Allocate space for your columns and receive them (synchronously)
-        my_cols = malloc(gj.groupNumber * sizeof(column));
+        my_cols = malloc(gj.groupNumber * sizeof(column_t));
         float* tmp_data = malloc(gj.dimension * sizeof(float));
         int j, my_cols_idx = 0;
         for (j = 0; j < gj.dimension; j++) {
             if (is_my_column(j, my_rank)) {
-                printf("About to receive col[%d] -- col_idx == %d\n", j, my_cols_idx);
+//                printf("About to receive col[%d] -- col_idx == %d\n", j, my_cols_idx);
                 MPI_Request request;
                 MPI_Irecv(tmp_data, gj.dimension, MPI_FLOAT, 0,
                     j, MPI_COMM_WORLD, &request);
                 wait_wrapper(&request);
-                printf("Slave(%d) - Got column[%d]:\n", my_rank, j);
-                my_cols[my_cols_idx] = create_column(j, tmp_data);
-                print_column(my_cols[my_cols_idx]);
+//                printf("Slave(%d) - Got column[%d]:\n", my_rank, j);
+                my_cols[my_cols_idx++] = create_column(j, tmp_data);
+//                print_column(my_cols[my_cols_idx - 1]);
                 if (my_cols_idx == gj.groupNumber)
                     break;
             }
@@ -94,6 +94,17 @@ column** init(int augmented_n, float** augmented_m, int groupDistribution) {
         tmp_data = NULL;
     }
     return my_cols;
+}
+
+void destroy(column_t** my_cols_ptr, int my_rank) {
+    int i;
+    int upper_dim = (my_rank == 0) ? gj.groupNumber + 1 : gj.groupNumber;
+    for (i = 0; i < upper_dim; i++) {
+        delete_column((*my_cols_ptr)[i]);
+    }
+    free(*my_cols_ptr);
+    *my_cols_ptr = NULL;
+    printf("Process[%d] destroyed its data\n", my_rank);
 }
 
 /**

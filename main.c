@@ -46,13 +46,13 @@ int main(int argc, char** argv) {
     augmented_m[3][3] = -5;
     augmented_m[3][4] = 6;
     
-    init(augmented_n, augmented_m, groupsDistribution);
-    
+    column_t* my_cols = init(augmented_n, augmented_m, groupsDistribution);
     int my_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
-    printf("Proc(%d) finished\n", my_rank);
     MPI_Barrier(MPI_COMM_WORLD);
-//    sleep(5);
+    
+    destroy(&my_cols, my_rank);
+    printf("Proc(%d) finished\n", my_rank);
     return (EXIT_SUCCESS);
 }
 

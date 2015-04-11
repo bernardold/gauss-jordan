@@ -21,7 +21,8 @@ extern "C" {
         int dimension;
     } gauss_jordan;
 
-    column** init(int augmented_n, float** augmented_m, int groupDistribution);
+    column_t* init(int augmented_n, float** augmented_m, int groupDistribution);
+    void destroy(column_t** my_cols_ptr, int my_rank);
     
 
 #ifdef	__cplusplus
