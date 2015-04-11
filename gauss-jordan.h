@@ -12,6 +12,8 @@
 extern "C" {
 #endif
 
+#include "column.h"
+
     typedef struct {
         int groupDistribution;
         int proc_num;
@@ -19,7 +21,7 @@ extern "C" {
         int dimension;
     } gauss_jordan;
 
-    float** init(int augmented_n, float** augmented_m, int groupDistribution);
+    column** init(int augmented_n, float** augmented_m, int groupDistribution);
     
 
 #ifdef	__cplusplus

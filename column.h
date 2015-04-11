@@ -12,7 +12,14 @@
 extern "C" {
 #endif
 
-void print_column(float* data);
+    typedef struct Column_Type {
+        float* data;
+        int idx;
+    } column;
+    
+    column* create_column(int idx, float* data);
+    void delete_column(column** col_ptr);
+    void print_column(column* column);
 
 
 #ifdef	__cplusplus
