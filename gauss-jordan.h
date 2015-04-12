@@ -15,15 +15,16 @@ extern "C" {
 #include "column.h"
 
     typedef struct {
-        int groupDistribution;
+        int use_group_distribution;
         int proc_num;
-        int groupNumber;
+        int group_number;
         int dimension;
+        float* dummy_col;
     } gauss_jordan;
 
     column_t* init(int augmented_n, float** augmented_m, int groupDistribution);
     void destroy(column_t** my_cols_ptr, int my_rank);
-    
+
 
 #ifdef	__cplusplus
 }
