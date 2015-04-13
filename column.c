@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "column.h"
-#include "gauss-jordan.h"
+#include "gauss_jordan.h"
 
 extern gauss_jordan gj;
 

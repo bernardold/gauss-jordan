@@ -11,7 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "gauss-jordan.h"
+#include "gauss_jordan.h"
 
 gauss_jordan gj;
 

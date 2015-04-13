@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include "gauss-jordan.h"
+#include "gauss_jordan.h"
 #include "column.h"
 #include "mpi_wrappers.h"
 
