@@ -15,6 +15,9 @@ int is_my_column(int col_idx, int my_rank);
 int process_of_column(int col_idx);
 int number_of_cols(int rank);
 int map_global_to_local(int k);
+int number_of_recipients(int my_rank);
+MPI_Request* send_column(int k, int max_idx, column_t* my_cols, int my_rank);
+column_t receive_column(int k);
 
 /**
  * Initializes the program, MPI framework, and sends the columns to the 
@@ -76,7 +79,7 @@ column_t* init(int augmented_n, float** augmented_m, int useGroupDistribution) {
         // Free all columns array
         free(columns);
         columns = NULL;
-        printf("Master - Sent all data\n");
+//        printf("Master - Sent all data\n");
     }
     else {
         // Allocate space for your columns and receive them (synchronously)
@@ -103,6 +106,7 @@ column_t* init(int augmented_n, float** augmented_m, int useGroupDistribution) {
     // Allocate space for the dummy column, used for sending and receiving
     // a column (acts as a serialization array)
     gj.dummy_col = malloc((gj.dimension + 1) * sizeof(float));
+    free(augmented_m);
     return my_cols;
 }
 
@@ -118,20 +122,75 @@ void destroy(column_t** my_cols_ptr, int my_rank) {
     // Free dummy column
     free(gj.dummy_col);
     gj.dummy_col = NULL;
-    printf("Process[%d] destroyed its data\n", my_rank);
 }
 
 void gj_kgi_main_loop(column_t* my_cols, int my_rank) {
     int k;
-    for (k = 0; k < gj.dimension + 1; k++) {
+    for (k = 0; k < gj.dimension; k++) {
         if (is_my_column(k, my_rank)) {
+//            printf("I'm rank(%d), and [%d] is my column\n", my_rank, k);
             column_t col = my_cols[map_global_to_local(k)];
+            int pivot_idx = pivot(col, k);
+            MPI_Request* requests = send_column(k, pivot_idx, my_cols, my_rank);
+            int j, upper_bound = number_of_cols(my_rank);
+            for (j = map_global_to_local(k) + 1; j < upper_bound; j++) {
+//                if (my_rank == 0) 
+//                    printf("%d-Proc[%d] modifying column[%d]\n", k, my_rank, j);
+                modify(my_cols[j], col, pivot_idx, k);
+            }
+            int recipients_number = (my_rank == gj.proc_num - 1) ? 
+                1 : number_of_recipients(my_rank);
+//            printf("\t%d-Proc[%d] WILL WAIT\n", k, my_rank);
+            wait_all_wrapper(requests, recipients_number);
+//            printf("__\t%d-Proc[%d] finished waiting\n", k, my_rank);
+            free(requests);
         }
         else {
-            
+            // Receive column and extract pivot index
+            if ((my_rank == 0) || 
+                    ( !(gj.use_group_distribution && (my_rank < process_of_column(k))) )) {
+//                printf("\t%d-Proc[%d] WILL RECEIVE col\n", k, my_rank);
+                column_t col = receive_column(k);
+//                printf("\t\t%d-Proc[%d] RECEIVED col\n", k, my_rank);
+                int pivot_idx = (int) gj.dummy_col[0];
+                /* 
+                 * Which local columns to modify?
+                 *      On k-group distribution, start from 0. As all the previous,
+                 *          columns, belong to my_rank - 1 processes
+                 *      On circular distribution, start from the conversion of 
+                 *          k to the local_idx format + 1. Although, if the 
+                 *          process_of_col(k) isn't the last one, the processes that
+                 *          receive the k-column and have rank > my_rank must modify
+                 *          the local_idx local column, as well
+                 */
+                if (gj.use_group_distribution) {
+                    if (my_rank == 0) {
+//                        printf("\t%d--Proc[0] modifying column[%d]\n", k, gj.group_number);
+                        modify(my_cols[gj.group_number], col, pivot_idx, k);
+                    }
+                    else {
+                        int j;
+                        for (j = 0; j < gj.group_number; j++) {
+//                            if (my_rank == 0) 
+//                                printf("\t%d--Proc[%d] modifying column[%d]\n", k, my_rank, j);
+                            modify(my_cols[j], col, pivot_idx, k);
+                        }
+                    }
+                }
+                else {
+                    int local_idx = map_global_to_local(k);
+                    // Not the latest column, start modifying from the local_idx
+                    int j, start_idx = (process_of_column(k) != gj.proc_num - 1) ? 
+                            local_idx : local_idx + 1;
+                    int upper_bound = (my_rank == 0) ? 
+                        gj.group_number + 1 : gj.group_number;
+                    for (j = start_idx; j < upper_bound; j++)
+                        modify(my_cols[j], col, pivot_idx, k);
+                }
+                delete_column(col);
+            }
         }
     }
-
 }
 
 /**
@@ -150,9 +209,8 @@ int is_my_column(int col_idx, int my_rank) {
  * @return The rank of the MPI Process
  */
 int process_of_column(int col_idx) {
-    if (gj.use_group_distribution) {
+    if (gj.use_group_distribution)
         return col_idx / gj.group_number;
-    }
     else
         return col_idx % gj.proc_num;
 }
@@ -178,6 +236,15 @@ int map_global_to_local(int k) {
 }
 
 /**
+ * Returns the number of recipients depending on the distribution
+ * @param my_rank The rank of the current MPI Process
+ * @return The number of recipients
+ */
+int number_of_recipients(int my_rank) {
+    return (gj.use_group_distribution) ? gj.proc_num - my_rank - 1 : gj.proc_num - 1;
+}
+
+/**
  * Send the k-th column to all the > k column owners
  * @param k The current step of the method
  * @param max_idx The pivot element index
@@ -193,13 +260,37 @@ MPI_Request* send_column(int k, int max_idx, column_t* my_cols, int my_rank) {
     memcpy(&(gj.dummy_col[1]), my_cols[local_idx]->data, gj.dimension * sizeof(float));
     // Send it to all the > k owners, but gather indices to my own
     // (that are > k)
-    MPI_Request *requests = malloc(
-            (gj.proc_num - my_rank + 1) * sizeof(MPI_Request));
-    int rank, requests_idx = 0;
-    for (rank = my_rank + 1; rank < gj.proc_num; rank++) {
-        MPI_Isend(gj.dummy_col, gj.dimension + 1, MPI_FLOAT, rank, k, 
-                MPI_COMM_WORLD, &(requests[requests_idx++]));
+    // No need to send columns to others except for master process (has b-vector) 
+    // if in group-distribution and you're the latest process
+    if (gj.use_group_distribution && (my_rank == gj.proc_num - 1)) {
+        MPI_Request *requests = malloc(sizeof(MPI_Request));
+        MPI_Isend(gj.dummy_col, gj.dimension + 1, MPI_FLOAT, 0, k, 
+                    MPI_COMM_WORLD, &(requests[0]));
+        return requests;
     }
+    MPI_Request *requests = malloc(
+            number_of_recipients(my_rank) * sizeof(MPI_Request));
+    int rank, requests_idx = 0;
+    if (gj.use_group_distribution) {
+        for (rank = my_rank + 1; rank < gj.proc_num; rank++) {
+//            printf("Proc[%d] sending to proc[%d]\n", my_rank, rank);
+            MPI_Isend(gj.dummy_col, gj.dimension + 1, MPI_FLOAT, rank, k, 
+                    MPI_COMM_WORLD, &(requests[requests_idx++]));
+        }
+        // Send to master process as well
+        MPI_Isend(gj.dummy_col, gj.dimension + 1, MPI_FLOAT, 0, k, 
+                    MPI_COMM_WORLD, &(requests[requests_idx++]));
+    }
+    else {
+        for (rank = 0; rank < gj.proc_num; rank++) {
+            if (rank != my_rank) 
+                MPI_Isend(gj.dummy_col, gj.dimension + 1, MPI_FLOAT, rank, k, 
+                    MPI_COMM_WORLD, &(requests[requests_idx++]));
+        }
+    }
+//    if (k == 1) {
+//        printf("[k==1], sent to %d processes\n", requests_idx);
+//    }
     return requests;
 }
 
@@ -214,4 +305,30 @@ column_t receive_column(int k) {
             k, MPI_COMM_WORLD, &request);
     wait_wrapper(&request);
     return create_column(k, &(gj.dummy_col[1]));
+}
+
+/**
+ * Randomly creates a [n x n] matrix
+ * @param dimension The 1D of the matrix
+ * @return The matrix
+ */
+float** create_square_matrix(int dimension) {
+    int i,j;
+    float** matrix = malloc(dimension * sizeof(float*));
+    for (i = 0; i < dimension; i++) {
+        matrix[i] = malloc(dimension * sizeof(float));
+        for (j = 0; j < dimension; j++) {
+            matrix[i][j] = rand();
+        }
+    }
+    return matrix;
+}
+
+float* create_random_array(int dimension) {
+    float* array = malloc(dimension * sizeof(float));
+    int i;
+    for (i = 0; i < dimension; i++) {
+        array[i] = rand();
+    }
+    return array;
 }

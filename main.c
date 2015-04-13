@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <mpi.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "gauss-jordan.h"
@@ -15,8 +16,9 @@
 gauss_jordan gj;
 
 int main(int argc, char** argv) {
+    srand(time(NULL));
     // WIP - Fixed params
-    int groupsDistribution = 1;
+    int groupsDistribution = 0;
     // Read array
     int augmented_n = 5;
     float **augmented_m = NULL;
@@ -50,9 +52,17 @@ int main(int argc, char** argv) {
     int my_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
     MPI_Barrier(MPI_COMM_WORLD);
+    gj_kgi_main_loop(my_cols, my_rank);
+    if (my_rank == 0) {
+        // Master process has b-vector
+        printf("Master printing solution\n");
+        print_column(my_cols[gj.group_number]);
+    }
     
+//    printf("Process[%d] reached barrier\n", my_rank);
+//    MPI_Barrier(MPI_COMM_WORLD);
     destroy(&my_cols, my_rank);
-    printf("Proc(%d) finished\n", my_rank);
+    printf("============Proc(%d) finished============\n", my_rank);
     return (EXIT_SUCCESS);
 }
 

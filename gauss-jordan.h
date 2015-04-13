@@ -24,6 +24,9 @@ extern "C" {
 
     column_t* init(int augmented_n, float** augmented_m, int groupDistribution);
     void destroy(column_t** my_cols_ptr, int my_rank);
+    void gj_kgi_main_loop(column_t* my_cols, int my_rank);
+    float** create_square_matrix(int dimension);
+    float* create_random_array(int dimension);
 
 
 #ifdef	__cplusplus
