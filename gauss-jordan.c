@@ -18,6 +18,7 @@ int map_global_to_local(int k);
 int number_of_recipients(int my_rank);
 MPI_Request* send_column(int k, int max_idx, column_t* my_cols, int my_rank);
 column_t receive_column(int k);
+void destroy_augmented_matrix(float** augmented_m);
 
 /**
  * Initializes the program, MPI framework, and sends the columns to the 
@@ -34,6 +35,10 @@ column_t* init(int augmented_n, float** augmented_m, int useGroupDistribution) {
     MPI_Init(NULL, NULL);
     // Initialize global Gauss Jordan info struct
     MPI_Comm_size(MPI_COMM_WORLD, &(gj.proc_num));
+    if (gj.dimension % gj.proc_num != 0) {
+        fprintf(stderr, "Dimension given, not divisible by process_number\n");
+        
+    }
     gj.group_number = gj.dimension / gj.proc_num;
 
     int my_rank;
@@ -106,7 +111,7 @@ column_t* init(int augmented_n, float** augmented_m, int useGroupDistribution) {
     // Allocate space for the dummy column, used for sending and receiving
     // a column (acts as a serialization array)
     gj.dummy_col = malloc((gj.dimension + 1) * sizeof(float));
-    free(augmented_m);
+    destroy_augmented_matrix(augmented_m);
     return my_cols;
 }
 
@@ -126,6 +131,7 @@ void destroy(column_t** my_cols_ptr, int my_rank) {
 
 void gj_kgi_main_loop(column_t* my_cols, int my_rank) {
     int k;
+    double start_time = MPI_Wtime();
     for (k = 0; k < gj.dimension; k++) {
         if (is_my_column(k, my_rank)) {
 //            printf("I'm rank(%d), and [%d] is my column\n", my_rank, k);
@@ -135,13 +141,13 @@ void gj_kgi_main_loop(column_t* my_cols, int my_rank) {
             int j, upper_bound = number_of_cols(my_rank);
             for (j = map_global_to_local(k) + 1; j < upper_bound; j++) {
 //                if (my_rank == 0) 
-//                    printf("%d-Proc[%d] modifying column[%d]\n", k, my_rank, j);
+//                printf("%d-Proc[%d] modifying column[%d]\n", k, my_rank, j);
                 modify(my_cols[j], col, pivot_idx, k);
             }
-            int recipients_number = (my_rank == gj.proc_num - 1) ? 
-                1 : number_of_recipients(my_rank);
+//            int recipients_number = (my_rank == gj.proc_num - 1) ? 
+//                1 : number_of_recipients(my_rank);
 //            printf("\t%d-Proc[%d] WILL WAIT\n", k, my_rank);
-            wait_all_wrapper(requests, recipients_number);
+            wait_all_wrapper(requests, gj.recipients_number);
 //            printf("__\t%d-Proc[%d] finished waiting\n", k, my_rank);
             free(requests);
         }
@@ -191,6 +197,9 @@ void gj_kgi_main_loop(column_t* my_cols, int my_rank) {
             }
         }
     }
+    double end_time = MPI_Wtime();
+    if (my_rank == 0) 
+        printf("time: %f\n", end_time - start_time);
 }
 
 /**
@@ -266,6 +275,7 @@ MPI_Request* send_column(int k, int max_idx, column_t* my_cols, int my_rank) {
         MPI_Request *requests = malloc(sizeof(MPI_Request));
         MPI_Isend(gj.dummy_col, gj.dimension + 1, MPI_FLOAT, 0, k, 
                     MPI_COMM_WORLD, &(requests[0]));
+        gj.recipients_number = 1;
         return requests;
     }
     MPI_Request *requests = malloc(
@@ -291,6 +301,7 @@ MPI_Request* send_column(int k, int max_idx, column_t* my_cols, int my_rank) {
 //    if (k == 1) {
 //        printf("[k==1], sent to %d processes\n", requests_idx);
 //    }
+    gj.recipients_number = requests_idx - 1;
     return requests;
 }
 
@@ -308,27 +319,26 @@ column_t receive_column(int k) {
 }
 
 /**
- * Randomly creates a [n x n] matrix
- * @param dimension The 1D of the matrix
- * @return The matrix
+ * Randomly creates a [n x (n + 1)] matrix
+ * @param dimension The dimension n of the matrix
+ * @return The augmented matrix
  */
-float** create_square_matrix(int dimension) {
+float** create_augmented_matrix(int dimension) {
     int i,j;
     float** matrix = malloc(dimension * sizeof(float*));
     for (i = 0; i < dimension; i++) {
-        matrix[i] = malloc(dimension * sizeof(float));
-        for (j = 0; j < dimension; j++) {
+        matrix[i] = malloc((dimension + 1) * sizeof(float));
+        for (j = 0; j < dimension + 1; j++) {
             matrix[i][j] = rand();
         }
     }
     return matrix;
 }
 
-float* create_random_array(int dimension) {
-    float* array = malloc(dimension * sizeof(float));
+void destroy_augmented_matrix(float** augmented_m) {
     int i;
-    for (i = 0; i < dimension; i++) {
-        array[i] = rand();
+    for (i = 0; i < gj.dimension; i++) {
+        free(augmented_m[i]);
     }
-    return array;
+    free(augmented_m);
 }

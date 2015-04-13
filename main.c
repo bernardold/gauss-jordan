@@ -17,9 +17,25 @@ gauss_jordan gj;
 
 int main(int argc, char** argv) {
     srand(time(NULL));
-    // WIP - Fixed params
-    int groupsDistribution = 0;
-    // Read array
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s [dimension (not augmented)] [use k-group distribution]\n",
+                argv[0]);
+        exit(EXIT_SUCCESS);
+    }
+    int dimension = atoi(argv[1]);
+    if (dimension <= 0 || (dimension % 2 != 0)) {
+        fprintf(stderr, "[dimension] must be a positive even number\n");
+        exit(EXIT_SUCCESS);
+    }
+    int groupsDistribution = atoi(argv[2]);
+    if (groupsDistribution < 0 || groupsDistribution > 1) {
+        fprintf(stderr, "[use k-group distribution must be either 0 or 1]\n");
+        exit(EXIT_SUCCESS);
+    }
+    // Create augmented random array
+    float** augmented_m = create_augmented_matrix(dimension);
+    int augmented_n = dimension + 1;
+    /* Initial test case
     int augmented_n = 5;
     float **augmented_m = NULL;
     augmented_m = malloc((augmented_n - 1) * sizeof(float*));
@@ -47,6 +63,7 @@ int main(int argc, char** argv) {
     augmented_m[3][2] = -6;
     augmented_m[3][3] = -5;
     augmented_m[3][4] = 6;
+     * */
     
     column_t* my_cols = init(augmented_n, augmented_m, groupsDistribution);
     int my_rank;
@@ -58,9 +75,10 @@ int main(int argc, char** argv) {
         printf("Master printing solution\n");
         print_column(my_cols[gj.group_number]);
     }
-    
-//    printf("Process[%d] reached barrier\n", my_rank);
-//    MPI_Barrier(MPI_COMM_WORLD);
+    // All processes must reach to the barrier for the de-allocation process and
+    // the termination of the MPI framework, or else, master process doesn't get
+    // finalize properly
+    MPI_Barrier(MPI_COMM_WORLD);
     destroy(&my_cols, my_rank);
     printf("============Proc(%d) finished============\n", my_rank);
     return (EXIT_SUCCESS);
