@@ -30,6 +30,9 @@ clean-all:
 run:
 	mpiexec -n $(PN) ./$(EXECUTABLE_NAME) $(N) $(GROUP)
 
+test:
+	./tests.sh
+
 # Usage
 help:
 	@:
