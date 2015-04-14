@@ -11,12 +11,12 @@ extern gauss_jordan gj;
 
 // Forward declarations
 void wait_all_wrapper(MPI_Request* requests, int size);
-int is_my_column(int col_idx, int my_rank);
+int is_my_column(int col_idx);
 int process_of_column(int col_idx);
-int number_of_cols(int rank);
+int number_of_cols();
 int map_global_to_local(int k);
-int number_of_recipients(int my_rank);
-MPI_Request* send_column(int k, int max_idx, column_t* my_cols, int my_rank);
+int number_of_recipients();
+MPI_Request* send_column(int k, int max_idx, column_t* my_cols);
 column_t receive_column(int k);
 void destroy_augmented_matrix(float** augmented_m);
 
@@ -37,17 +37,16 @@ column_t* init(int augmented_n, float** augmented_m, int useGroupDistribution) {
     MPI_Comm_size(MPI_COMM_WORLD, &(gj.proc_num));
     if (gj.dimension % gj.proc_num != 0) {
         fprintf(stderr, "Dimension given, not divisible by process_number\n");
-        
+        exit(EXIT_FAILURE);
     }
     gj.group_number = gj.dimension / gj.proc_num;
 
-    int my_rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+    MPI_Comm_rank(MPI_COMM_WORLD, &gj.my_rank);
     column_t* my_cols;
     // Master populates an all-columns array
     // then sends the appropriate columns to their "owners"
     // Others, receive their columns and add them to their column array
-    if (my_rank == 0) {
+    if (gj.my_rank == 0) {
         // Convert array to columns
         float** columns = malloc(augmented_n * sizeof(float*));
         int j;
@@ -62,51 +61,54 @@ column_t* init(int augmented_n, float** augmented_m, int useGroupDistribution) {
         // Send to others and populate yours
         // (master handles the b-vector as well)
         my_cols = malloc((gj.group_number + 1) * sizeof(column_t));
+        memset(my_cols, '\0', (gj.group_number + 1) * sizeof(column_t));
         MPI_Request* requests = 
             malloc(gj.group_number * (gj.proc_num - 1) * sizeof(MPI_Request));
+        memset(requests, '\0', gj.group_number * (gj.proc_num - 1) * sizeof(MPI_Request));
         int my_cols_idx = 0, requests_idx = 0;
         for (j = 0; j < augmented_n - 1; j++) {
             int others_rank = process_of_column(j);
-            if (others_rank != my_rank) {
+            if (others_rank != gj.my_rank)
                 MPI_Isend(columns[j], gj.dimension, MPI_FLOAT, others_rank, j,
                     MPI_COMM_WORLD, &(requests[requests_idx++]));
-            }
-            else 
+            else
                 my_cols[my_cols_idx++] = create_column(j, columns[j]);
         }
         // Add b-vector
         my_cols[my_cols_idx] = create_column(j, columns[gj.dimension]);
 
         // Wait on sent data
-        wait_all_wrapper(requests, --requests_idx);
+        wait_all_wrapper(requests, requests_idx);
         free(requests);
         requests = NULL;
         // Free all columns array
+        for (j = 0; j < augmented_n; j++) {
+            free(columns[j]);
+            columns[j] = NULL;
+        }
         free(columns);
         columns = NULL;
-//        printf("Master - Sent all data\n");
     }
     else {
         // Allocate space for your columns and receive them (synchronously)
         my_cols = malloc(gj.group_number * sizeof(column_t));
-        float* tmp_data = malloc(gj.dimension * sizeof(float));
+        memset(my_cols, '\0', gj.group_number * sizeof(column_t));
+        float* tmp_col = malloc(gj.dimension * sizeof(float));
+        memset(tmp_col, '\0', gj.dimension * sizeof(float));
         int j, my_cols_idx = 0;
         for (j = 0; j < gj.dimension; j++) {
-            if (is_my_column(j, my_rank)) {
-//                printf("About to receive col[%d] -- col_idx == %d\n", j, my_cols_idx);
+            if (is_my_column(j)) {
                 MPI_Request request;
-                MPI_Irecv(tmp_data, gj.dimension, MPI_FLOAT, 0,
+                MPI_Irecv(tmp_col, gj.dimension, MPI_FLOAT, 0,
                     j, MPI_COMM_WORLD, &request);
                 wait_wrapper(&request);
-//                printf("Slave(%d) - Got column[%d]:\n", my_rank, j);
-                my_cols[my_cols_idx++] = create_column(j, tmp_data);
-//                print_column(my_cols[my_cols_idx - 1]);
+                my_cols[my_cols_idx++] = create_column(j, tmp_col);
                 if (my_cols_idx == gj.group_number)
                     break;
             }
         }
-        free(tmp_data);
-        tmp_data = NULL;
+        free(tmp_col);
+        tmp_col = NULL;
     }
     // Allocate space for the dummy column, used for sending and receiving
     // a column (acts as a serialization array)
@@ -115,12 +117,13 @@ column_t* init(int augmented_n, float** augmented_m, int useGroupDistribution) {
     return my_cols;
 }
 
-void destroy(column_t** my_cols_ptr, int my_rank) {
+void destroy(column_t** my_cols_ptr) {
     // Free my_cols array
     int i;
-    int upper_dim = (my_rank == 0) ? gj.group_number + 1 : gj.group_number;
+    int upper_dim = (gj.my_rank == 0) ? gj.group_number + 1 : gj.group_number;
     for (i = 0; i < upper_dim; i++) {
         delete_column((*my_cols_ptr)[i]);
+        (*my_cols_ptr)[i] = NULL;
     }
     free(*my_cols_ptr);
     *my_cols_ptr = NULL;
@@ -129,35 +132,27 @@ void destroy(column_t** my_cols_ptr, int my_rank) {
     gj.dummy_col = NULL;
 }
 
-void gj_kgi_main_loop(column_t* my_cols, int my_rank) {
+void gj_kgi_main_loop(column_t* my_cols) {
     int k;
     double start_time = MPI_Wtime();
     for (k = 0; k < gj.dimension; k++) {
-        if (is_my_column(k, my_rank)) {
-//            printf("I'm rank(%d), and [%d] is my column\n", my_rank, k);
+        if (is_my_column(k)) {
             column_t col = my_cols[map_global_to_local(k)];
             int pivot_idx = pivot(col, k);
-            MPI_Request* requests = send_column(k, pivot_idx, my_cols, my_rank);
-            int j, upper_bound = number_of_cols(my_rank);
+            MPI_Request* requests = send_column(k, pivot_idx, my_cols);
+            int j, upper_bound = number_of_cols();
             for (j = map_global_to_local(k) + 1; j < upper_bound; j++) {
-//                if (my_rank == 0) 
-//                printf("%d-Proc[%d] modifying column[%d]\n", k, my_rank, j);
                 modify(my_cols[j], col, pivot_idx, k);
             }
-//            int recipients_number = (my_rank == gj.proc_num - 1) ? 
-//                1 : number_of_recipients(my_rank);
-//            printf("\t%d-Proc[%d] WILL WAIT\n", k, my_rank);
             wait_all_wrapper(requests, gj.recipients_number);
-//            printf("__\t%d-Proc[%d] finished waiting\n", k, my_rank);
             free(requests);
+            requests = NULL;
         }
         else {
             // Receive column and extract pivot index
-            if ((my_rank == 0) || 
-                    ( !(gj.use_group_distribution && (my_rank < process_of_column(k))) )) {
-//                printf("\t%d-Proc[%d] WILL RECEIVE col\n", k, my_rank);
+            if ((gj.my_rank == 0) || 
+                    ( !(gj.use_group_distribution && (gj.my_rank < process_of_column(k))) )) {
                 column_t col = receive_column(k);
-//                printf("\t\t%d-Proc[%d] RECEIVED col\n", k, my_rank);
                 int pivot_idx = (int) gj.dummy_col[0];
                 /* 
                  * Which local columns to modify?
@@ -170,17 +165,12 @@ void gj_kgi_main_loop(column_t* my_cols, int my_rank) {
                  *          the local_idx local column, as well
                  */
                 if (gj.use_group_distribution) {
-                    if (my_rank == 0) {
-//                        printf("\t%d--Proc[0] modifying column[%d]\n", k, gj.group_number);
+                    if (gj.my_rank == 0)
                         modify(my_cols[gj.group_number], col, pivot_idx, k);
-                    }
                     else {
                         int j;
-                        for (j = 0; j < gj.group_number; j++) {
-//                            if (my_rank == 0) 
-//                                printf("\t%d--Proc[%d] modifying column[%d]\n", k, my_rank, j);
+                        for (j = 0; j < gj.group_number; j++) 
                             modify(my_cols[j], col, pivot_idx, k);
-                        }
                     }
                 }
                 else {
@@ -188,7 +178,7 @@ void gj_kgi_main_loop(column_t* my_cols, int my_rank) {
                     // Not the latest column, start modifying from the local_idx
                     int j, start_idx = (process_of_column(k) != gj.proc_num - 1) ? 
                             local_idx : local_idx + 1;
-                    int upper_bound = (my_rank == 0) ? 
+                    int upper_bound = (gj.my_rank == 0) ? 
                         gj.group_number + 1 : gj.group_number;
                     for (j = start_idx; j < upper_bound; j++)
                         modify(my_cols[j], col, pivot_idx, k);
@@ -198,18 +188,17 @@ void gj_kgi_main_loop(column_t* my_cols, int my_rank) {
         }
     }
     double end_time = MPI_Wtime();
-    if (my_rank == 0) 
-        printf("time: %f\n", end_time - start_time);
+    if (gj.my_rank == 0) 
+        printf("%f\n", end_time - start_time);
 }
 
 /**
  * Checks if the column given belongs to the MPI process passed
  * @param col_idx The column idx
- * @param my_rank The MPI Process to be checked against owning the column
  * @return On true, 1 is returned, otherwise 0
  */
-int is_my_column(int col_idx, int my_rank) {
-    return process_of_column(col_idx) == my_rank;
+int is_my_column(int col_idx) {
+    return process_of_column(col_idx) == gj.my_rank;
 }
 
 /**
@@ -218,21 +207,18 @@ int is_my_column(int col_idx, int my_rank) {
  * @return The rank of the MPI Process
  */
 int process_of_column(int col_idx) {
-    if (gj.use_group_distribution)
-        return col_idx / gj.group_number;
-    else
-        return col_idx % gj.proc_num;
+    return (gj.use_group_distribution) ? 
+        col_idx / gj.group_number : col_idx % gj.proc_num;
 }
 
 /**
  * Returns the number of columns that a process has
  * (group number := dimension/process_number)
  * Rank_0 has group_number + 1, all others group_number
- * @param rank The rank of the process whose number of columns are needed
  * @return The number of columns of the rank-th process
  */
-int number_of_cols(int rank) {
-    return (rank == 0) ? gj.group_number + 1 : gj.group_number;
+int number_of_cols() {
+    return (gj.my_rank == 0) ? gj.group_number + 1 : gj.group_number;
 }
 
 /**
@@ -246,11 +232,15 @@ int map_global_to_local(int k) {
 
 /**
  * Returns the number of recipients depending on the distribution
- * @param my_rank The rank of the current MPI Process
  * @return The number of recipients
  */
-int number_of_recipients(int my_rank) {
-    return (gj.use_group_distribution) ? gj.proc_num - my_rank - 1 : gj.proc_num - 1;
+int number_of_recipients() {
+    int recipients_num = (gj.use_group_distribution) ? gj.proc_num - gj.my_rank : gj.proc_num - 1;
+    // If it's the first process (non master), it must send to [proc_num - rank]
+    // processes
+    if (gj.use_group_distribution && gj.my_rank == 0)
+        recipients_num++;
+    return recipients_num;
 }
 
 /**
@@ -258,10 +248,9 @@ int number_of_recipients(int my_rank) {
  * @param k The current step of the method
  * @param max_idx The pivot element index
  * @param my_cols The columns array of the current MPI process
- * @param my_rank The rank of the current MPI Process
  * @return Array of MPI_Requests, that was populated on Isend
  */
-MPI_Request* send_column(int k, int max_idx, column_t* my_cols, int my_rank) {
+MPI_Request* send_column(int k, int max_idx, column_t* my_cols) {
     // Get the k-th column
     int local_idx = map_global_to_local(k);
     // Serialize the struct to the local array
@@ -269,39 +258,28 @@ MPI_Request* send_column(int k, int max_idx, column_t* my_cols, int my_rank) {
     memcpy(&(gj.dummy_col[1]), my_cols[local_idx]->data, gj.dimension * sizeof(float));
     // Send it to all the > k owners, but gather indices to my own
     // (that are > k)
-    // No need to send columns to others except for master process (has b-vector) 
-    // if in group-distribution and you're the latest process
-    if (gj.use_group_distribution && (my_rank == gj.proc_num - 1)) {
-        MPI_Request *requests = malloc(sizeof(MPI_Request));
-        MPI_Isend(gj.dummy_col, gj.dimension + 1, MPI_FLOAT, 0, k, 
-                    MPI_COMM_WORLD, &(requests[0]));
-        gj.recipients_number = 1;
-        return requests;
-    }
     MPI_Request *requests = malloc(
-            number_of_recipients(my_rank) * sizeof(MPI_Request));
+            number_of_recipients() * sizeof(MPI_Request));
     int rank, requests_idx = 0;
     if (gj.use_group_distribution) {
-        for (rank = my_rank + 1; rank < gj.proc_num; rank++) {
-//            printf("Proc[%d] sending to proc[%d]\n", my_rank, rank);
+        for (rank = gj.my_rank + 1; rank < gj.proc_num; rank++) {
             MPI_Isend(gj.dummy_col, gj.dimension + 1, MPI_FLOAT, rank, k, 
                     MPI_COMM_WORLD, &(requests[requests_idx++]));
         }
-        // Send to master process as well
-        MPI_Isend(gj.dummy_col, gj.dimension + 1, MPI_FLOAT, 0, k, 
-                    MPI_COMM_WORLD, &(requests[requests_idx++]));
+        if (gj.my_rank != 0) {
+            // Send to master process as well
+            MPI_Isend(gj.dummy_col, gj.dimension + 1, MPI_FLOAT, 0, k, 
+                        MPI_COMM_WORLD, &(requests[requests_idx++]));
+        }
     }
     else {
         for (rank = 0; rank < gj.proc_num; rank++) {
-            if (rank != my_rank) 
+            if (rank != gj.my_rank) 
                 MPI_Isend(gj.dummy_col, gj.dimension + 1, MPI_FLOAT, rank, k, 
                     MPI_COMM_WORLD, &(requests[requests_idx++]));
         }
     }
-//    if (k == 1) {
-//        printf("[k==1], sent to %d processes\n", requests_idx);
-//    }
-    gj.recipients_number = requests_idx - 1;
+    gj.recipients_number = requests_idx;
     return requests;
 }
 
@@ -339,6 +317,8 @@ void destroy_augmented_matrix(float** augmented_m) {
     int i;
     for (i = 0; i < gj.dimension; i++) {
         free(augmented_m[i]);
+        augmented_m[i] = NULL;
     }
     free(augmented_m);
+    augmented_m = NULL;
 }

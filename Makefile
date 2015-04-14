@@ -1,5 +1,5 @@
 CC = mpicc
-FLAGS = -c
+FLAGS = -c -g3 -Wall -Wextra
 LINK_FLAGS =
 OBJS = main.o column.o gauss_jordan.o mpi_wrappers.o
 EXECUTABLE_NAME = gj

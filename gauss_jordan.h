@@ -21,11 +21,12 @@ extern "C" {
         int dimension;
         float* dummy_col;
         int recipients_number;
+        int my_rank;
     } gauss_jordan;
 
     column_t* init(int augmented_n, float** augmented_m, int groupDistribution);
-    void destroy(column_t** my_cols_ptr, int my_rank);
-    void gj_kgi_main_loop(column_t* my_cols, int my_rank);
+    void destroy(column_t** my_cols_ptr);
+    void gj_kgi_main_loop(column_t* my_cols);
     float** create_augmented_matrix(int dimension);
 
 

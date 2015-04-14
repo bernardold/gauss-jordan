@@ -23,7 +23,7 @@ extern "C" {
     void print_column(column_t column);
     int pivot(column_t column, int k);
     void modify(column_t col, column_t pivot_col, 
-        int pivot_idx, int k);
+    int pivot_idx, int k);
 
 
 #ifdef	__cplusplus

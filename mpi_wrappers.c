@@ -2,8 +2,9 @@
 #include <stdlib.h>
 #include <mpi.h>
 #include "mpi_wrappers.h"
+#include "gauss_jordan.h"
 
-
+extern gauss_jordan gj;
 /**
  * Waiting for all requests array of length size
  * @param requests The MPI_Requests array
@@ -32,6 +33,7 @@ void wait_all_wrapper(MPI_Request* requests, int size) {
         }
     }
     free(statuses);
+    statuses = NULL;
 }
 
 /**

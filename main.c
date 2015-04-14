@@ -66,21 +66,18 @@ int main(int argc, char** argv) {
      * */
     
     column_t* my_cols = init(augmented_n, augmented_m, groupsDistribution);
-    int my_rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
     MPI_Barrier(MPI_COMM_WORLD);
-    gj_kgi_main_loop(my_cols, my_rank);
-    if (my_rank == 0) {
+    gj_kgi_main_loop(my_cols);
+    if (gj.my_rank == 0) {
         // Master process has b-vector
-        printf("Master printing solution\n");
-        print_column(my_cols[gj.group_number]);
+//        printf("Master printing solution\n");
+//        print_column(my_cols[gj.group_number]);
     }
     // All processes must reach to the barrier for the de-allocation process and
     // the termination of the MPI framework, or else, master process doesn't get
     // finalize properly
     MPI_Barrier(MPI_COMM_WORLD);
-    destroy(&my_cols, my_rank);
-    printf("============Proc(%d) finished============\n", my_rank);
+    destroy(&my_cols);
     return (EXIT_SUCCESS);
 }
 
