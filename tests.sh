@@ -3,7 +3,7 @@ log_all="all.csv"
 echo "proc_num, dimension, groups, time" >> ${log_all}
 for groups in 1 0
 do
-	for k in 64 128 256 512
+	for k in 512 1024 2048 3072 4096
 	do
 		for p in 2 4 8 16 32
 		do
