@@ -153,7 +153,7 @@ void gj_kgi_main_loop(column_t* my_cols) {
             // Receive column and extract pivot index
             if ((gj.my_rank == 0) || 
                     ( !(gj.use_group_distribution && (gj.my_rank < process_of_column(k))) )) {
-                if ((k > gj.dimension - gj.proc_num) && 
+                if (!gj.use_group_distribution && (k > gj.dimension - gj.proc_num) && 
                     (process_of_column(k) > gj.my_rank))
                     break;
                 column_t col = receive_column(k);
@@ -286,6 +286,9 @@ MPI_Request* send_column(int k, int max_idx, column_t* my_cols) {
         if (k >= gj.dimension - gj.proc_num + 2) {
             for (rank = gj.my_rank + 1; rank < gj.proc_num; rank++)
                 MPI_Isend(gj.dummy_col, gj.dimension + 1, MPI_FLOAT, rank, k, 
+                    MPI_COMM_WORLD, &(requests[requests_idx++]));
+            // Send to master process
+            MPI_Isend(gj.dummy_col, gj.dimension + 1, MPI_FLOAT, 0, k, 
                     MPI_COMM_WORLD, &(requests[requests_idx++]));
         }
         else {
