@@ -78,6 +78,7 @@ int main(int argc, char** argv) {
     // finalize properly
     MPI_Barrier(MPI_COMM_WORLD);
     destroy(&my_cols);
+    MPI_Finalize();
     return (EXIT_SUCCESS);
 }
 
