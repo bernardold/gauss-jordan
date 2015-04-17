@@ -153,6 +153,9 @@ void gj_kgi_main_loop(column_t* my_cols) {
             // Receive column and extract pivot index
             if ((gj.my_rank == 0) || 
                     ( !(gj.use_group_distribution && (gj.my_rank < process_of_column(k))) )) {
+                if ((k > gj.dimension - gj.proc_num) && 
+                    (process_of_column(k) > gj.my_rank))
+                    break;
                 column_t col = receive_column(k);
                 int pivot_idx = (int) gj.dummy_col[0];
                 /* 
@@ -275,10 +278,22 @@ MPI_Request* send_column(int k, int max_idx, column_t* my_cols) {
         }
     }
     else {
-        for (rank = 0; rank < gj.proc_num; rank++) {
-            if (rank != gj.my_rank) 
+        /* If we're at the latest dimension - proc_num + 2 columns, we can 
+         * avoid sending to all the other processes
+         * The +2 factor, is there because the general rule (send to all 
+         * others) is valid for the master and the next process as well
+        */
+        if (k >= gj.dimension - gj.proc_num + 2) {
+            for (rank = gj.my_rank + 1; rank < gj.proc_num; rank++)
                 MPI_Isend(gj.dummy_col, gj.dimension + 1, MPI_FLOAT, rank, k, 
                     MPI_COMM_WORLD, &(requests[requests_idx++]));
+        }
+        else {
+            for (rank = 0; rank < gj.proc_num; rank++) {
+                if (rank != gj.my_rank) 
+                    MPI_Isend(gj.dummy_col, gj.dimension + 1, MPI_FLOAT, rank, k, 
+                        MPI_COMM_WORLD, &(requests[requests_idx++]));
+            }
         }
     }
     gj.recipients_number = requests_idx;
