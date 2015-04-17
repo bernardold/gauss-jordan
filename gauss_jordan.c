@@ -19,6 +19,7 @@ int number_of_recipients();
 MPI_Request* send_column(int k, int max_idx, column_t* my_cols);
 column_t receive_column(int k);
 void destroy_augmented_matrix(float** augmented_m);
+void count_processes();
 
 /**
  * Initializes the program, MPI framework, and sends the columns to the 
@@ -190,6 +191,7 @@ void gj_kgi_main_loop(column_t* my_cols) {
     double end_time = MPI_Wtime();
     if (gj.my_rank == 0) 
         printf("%f\n", end_time - start_time);
+    count_processes();
 }
 
 /**
@@ -321,4 +323,15 @@ void destroy_augmented_matrix(float** augmented_m) {
     }
     free(augmented_m);
     augmented_m = NULL;
+}
+
+void count_processes() {
+    int local_int = 1, total_int = 0;
+    MPI_Reduce(&local_int, &total_int, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    if (gj.my_rank == 0) {
+        printf("Master process reporting [%d] number of processes\n", total_int);
+        if (total_int != gj.proc_num) {
+            printf("ERROR:\tproc_num: %d\n", gj.proc_num);
+        }
+    }
 }

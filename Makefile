@@ -1,8 +1,11 @@
 CC = mpicc
-FLAGS = -c -g3 -Wall -Wextra
+FLAGS = -c -O2 -Wall -Wextra
 LINK_FLAGS =
 OBJS = main.o column.o gauss_jordan.o mpi_wrappers.o
 EXECUTABLE_NAME = gj
+TAR_COMPRESSED = gj.tar
+GZ_TAR_COMPRESSED = gj.tar.gz
+FILES=*.c *.h Makefile tests.sh
 
 # Compile
 all: $(OBJS)
@@ -21,17 +24,22 @@ gauss_jordan.o: gauss_jordan.c
 mpi_wrappers.o: mpi_wrappers.c
 	$(CC) $(FLAGS) mpi_wrappers.c
 
-# Clean-up
 clean:
 	rm -f $(EXECUTABLE_NAME)
-clean-all:
-	rm -rf $(EXECUTABLE_NAME) $(OUTPUT)
+	rm -f $(TAR_COMPRESSED)
+	rm -f $(GZ_TAR_COMPRESSED)
 
 run:
 	mpiexec -n $(PN) ./$(EXECUTABLE_NAME) $(N) $(GROUP)
 
 test:
 	./tests.sh
+
+zcompress:
+	tar -zcvf $(GZ_TAR_COMPRESSED) $(FILES)
+
+compress:
+	tar -cvf $(TAR_COMPRESSED) $(FILES)
 
 # Usage
 help:
